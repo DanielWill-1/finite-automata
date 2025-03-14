@@ -1,12 +1,10 @@
-from flask import send_file
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 import graphviz
 import os
 
-
-app = Flask(__name__)
-CORS(app, resources={r"/get_graph": {"origins": "*"}}) # Allow frontend to communicate with the backend
+app = Flask(__name__, static_folder="static")
+CORS(app)  # Allow frontend to communicate with backend
 
 @app.route('/process_automata', methods=['POST'])
 def process_automata():
@@ -25,13 +23,22 @@ def process_automata():
             symbol, end = rest[0], rest[1]
             dot.edge(start, end, label=symbol)
 
-    filename = "static/automata"
-    dot.render(filename, format="png", cleanup=True)
-    return jsonify({"image_url": f"http://127.0.0.1:5000/{filename}"})
+    # Ensure static directory exists
+    os.makedirs("static", exist_ok=True)
+
+    # Save and return the image path
+    filename = "automata.png"
+    file_path = os.path.join(app.static_folder, filename)
+    dot.render(file_path.replace(".png", ""), format="png", cleanup=True)
+
+    return jsonify({"image_url": f"http://127.0.0.1:5000/static/{filename}"})
 
 @app.route('/static/<path:filename>')
 def serve_image(filename):
-    return send_file(f"static/{filename}")
+    file_path = os.path.join(app.static_folder, filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Image not found"}), 404
+    return send_from_directory(app.static_folder, filename)
 
 def simulate_automaton(states, transitions, start_state, accept_states, input_string):
     current_state = start_state
@@ -48,7 +55,7 @@ def simulate():
     states = data["states"].split(",")
     transitions_raw = data["transitions"].split("\n")
     start_state = data["start_state"]
-    accept_states = set(data["accept_states"].split(","))
+    accept_states = set(data["accept_states"].split(",")) if data["accept_states"] else set()
     input_string = data["input_string"]
 
     transitions = {}
@@ -65,7 +72,10 @@ def simulate():
 
 @app.route("/get_graph", methods=["GET"])
 def get_graph():
-    return send_file("automata.png", mimetype="image/png")
+    file_path = os.path.join(app.static_folder, "automata.png")
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Graph not found"}), 404
+    return send_file(file_path, mimetype="image/png")
 
 if __name__ == '__main__':
     os.makedirs("static", exist_ok=True)
